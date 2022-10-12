@@ -1,0 +1,101 @@
+syntax = "proto3";
+import "dataframe.proto";
+package schema;
+
+// 字段的存储方式
+enum FieldOp {
+    // 直接存储
+    Save = 0;
+    // 如果时第一个则存储
+    SaveFirst = 1;
+    // 跟当前值比较，存较大的
+    SaveMax = 2;
+    // 跟当前值比较，存较小的
+    SaveMin = 3;
+    // 累加到当前值
+    Inc = 4;
+    // 跟当上次值做减后存储 *需要状态存储
+    DiffPrevios = 5;
+    // 跟第一个值做减后存储 *需要状态存储
+    DiffFirst = 6;
+    // 计数，每次有更新加1
+    Count = 7;
+    // 平均值
+    Avg = 8;
+    // 无重复的计数，无额外设置时，以提供的值进行统计，如果设置了 op_params, 支持以提供的值从meta表中取数，其中
+    // op_params.src_field 为JSONB的查询路径
+    // op_params.src_schema 为meta表的表名
+    // op_params.trigger_field 如果设置，那么当trigger_field不为空/0时进行计算
+    Distinct = 9;
+}
+
+
+message OpParams {
+    /*
+    // 待统计的字段
+    string src_field = 1;
+    // 带统计字段所属的 schema
+    string src_schema = 2;
+    // 是否以自身的值作为触发条件，即输入非空值才触发计算，默认自身值不为空才进行计算
+    optional bool self_trigger = 3;
+    // 是否同时以其他字段非空/0为触发条件
+    optional string other_trigger = 4;
+    // 是否为计算上一笔值，有些统计需要在本周期结束后才进行计算, 默认计算当前周期的值
+    optional bool previous = 5;
+    */
+
+    // 待统计的字段, 不同的OP会有不同的含义
+    optional string src_field = 1;
+    // 带统计字段所属的 schema, 不同的OP会有不同的含义
+    optional string src_schema = 2;
+    // 如果设置，那么当trigger_field不为空/0时进行计算
+    optional string trigger_field = 4;
+
+}
+
+
+// 字段定义
+// 字段可以分为3类
+// - 直接存储的字段: 例如股票的价格
+// - 统计字段: 如最高价
+// - 计算字段: 如涨幅 (当前价-之前价格)/之前价格
+message Field {
+    // 字段名
+    string name = 1;
+    // 字段类型
+    dataframe.FieldKind dtype = 2;
+    // 引用的数据列序号, 对于有些统计字段, 需要指出其来源字段
+    uint32 refer = 3;
+    // 字段的计算方式
+    FieldOp op = 4;
+    /// 未设置时是否复制上一笔的值
+    bool paste = 5;
+    // 计算字段的表达式
+    optional string expr = 6;
+    // 对于有些统计方式，附带的参数，如 distinct, 可指明来源数据
+    optional OpParams op_params = 7;
+}
+
+// 数据结构定义
+// 数据可以在内存中保留一部分, 以便降低对存储的频繁访问, 提高请求QPS, 一般来说, 设置内存和存储中一块相同的数目足以应对大多数场景,
+// 但对于有大量标的, 写多读少的场景, 将内存中的数目设置成更小的值, 有利于减少系统的内存占用
+message Schema {
+    // 主键的列序号, 一般为时间
+    int32 pk_col = 1;
+    // 若干列
+    repeated Field fields = 2;
+    // 该结构在存储中每块的数目
+    uint32 max_rows_per_block = 3;
+    // 该结构在内存中保持的数目
+    uint32 max_rows_in_memory = 4;
+    // 更新链
+    // 当某个主表更新后, 可能需要更新其他相关的衍生表, 这样的行为即是更新链
+    // 合理设置更新链, 有助于减少交互次数, 提高整体性能
+    repeated string chains = 5;
+    // 判重列，在 pk_col 递增的前提下，如果 distinct_col 的值相同，则保留最后一笔
+    optional int32 distinct_col = 6;
+    // 数据的生命周期, 以秒为单位, 为0表示永不过期
+    optional uint32 ttl = 7;
+    // 扩展属性
+    map<string, string> addons = 100;
+}

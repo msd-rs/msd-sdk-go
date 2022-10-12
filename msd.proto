@@ -1,0 +1,339 @@
+syntax = "proto3";
+package msd;
+
+import "dataframe.proto";
+import "schema.proto";
+
+        
+// 获取数据请求参数
+message GetParams {
+    // 标的名
+    string obj   = 1;
+    // 表名，对应 schema 名
+    string dkind = 2;
+    // 字段列表
+    repeated string fields = 3;
+    // 开始时间
+    string start_date = 4;
+    // 结束时间
+    string end_date = 5;
+    // 偏移值
+    // 
+    // - 如果 ascending 为 true，则是时间最小的数据的偏移
+    // - 如果 ascending 为 false，则是时间最大的数据的偏移
+    int32 offest = 6;
+    // 最多获取的数目
+    int32 limit = 7;
+    // 按时间取数方向
+    bool ascending  = 8;
+    // 对元数据查询，可以在in参数指定一系列主键
+    repeated string ids = 9;
+    // 元数据的键值名称
+    string idname = 10;
+    // 额外的过滤条件， 从SQL解析而来
+    string addtional_where_ast = 11;
+
+}
+
+// 获取数据请求
+message GetDataFrameRequest{
+    // 请求的参数
+    GetParams params = 1;
+    // 请求参数的SQL表示，系统会优先使用 SQL，如果SQL为空，则使用 params
+    string sql = 2;
+    // 其他的扩展请求参数
+    map<string, string> addons = 100;
+}
+
+// 获取数据的返回
+message GetDataFrameResponse{
+    // 返回码
+    int32 code    = 1;
+    // 返回码的代表的消息
+    string messge = 2;
+    // 返回的值
+    dataframe.DataFrame values = 3;
+    // 返回的额外信息
+    map<string, string> addons = 100;
+}
+
+
+// 更新方式
+enum UpdateMode {
+    // 按数据结构中定义的方式进行更新, 默认， row 的列及其顺序符合字段定义的 refer 属性
+    Schema = 0;
+    // 导入更新，一般用于第一次，数据不做处理，直接更新, row 的列数与数据结构中的列一致
+    Import = 1;
+    // 粘贴上一笔数据，然后更改 pk_col 的值，保持其他的值不变, row 应该只有一列
+    Paste = 2;
+    // 批量 Schema 更新，忽略请求中的 obj 参数，而是从数据中获取
+    BulkSchema = 3;
+    // 批量 Import 更新，忽略请求中的 obj 参数，而是从数据中获取
+    BulkImport = 4;
+    // 来自更新链的更新, 更新链来的数据总是进行按 Schema 更新
+    Chain = 5;
+    // 数据修改, 数据修改需要指定列
+    // 例如对于CSV格式：主键值,1=V1,5=V5 表示修改匹配主键值的记录，列1值为V1，列5值为V5
+    Modify = 6;
+    // 对数据进行脚本的处理后再进行更新
+    Script = 7;
+}
+
+// 更新内容为 Binary 时数据头
+message UpdateRowBinary {
+    // 行数, 列数由 format 解析
+    int32 rows = 1;
+    // 类似 python pack 的 format， 但只支持有限的类型, q(i64) d(f64) s(字符串), 额外的 e 表示 D64
+    string format = 2;
+    // 实际的数据
+    bytes data = 4;
+}
+
+// 待更新数据的格式
+enum UpdateRowFormat {
+    // CSV 格式，默认 '\n' 分行 ',' 分隔
+    Csv = 0;
+    // BinaryRows 格式
+    Binary = 1;
+    // Json Record 格式, 类似 [{column -> value}, ... , {column -> value}] 的数组
+    JsonRecords = 2;
+    // Json Values 格式, 类似 [ [value1, value2, ...], ... ]
+    JsonValues = 3;
+}
+
+// CSV 格式的相关配置
+// 通过CSV的配置，目的是尽可能减少数据产生方对数据的额外转换，因为在很多场景下，数据产生方无法定制，为了接收其数据，
+// 需要一个额外的数据转换适配，通过本参数的配置，将会尽量去识别原始的数据，提升性能。
+message CsvOption {
+    // csv 的分割符，按4字节使用，从低到高依次为
+    // 0 : 列分隔符 1: 行分割符 2: 强制使用该字段，非强制状态下，行列的0值表示默认(\n 和,)
+    // 例如 
+    // 0x0000007C 表示用 |(0x7c) 分隔列，但仍用 \n(0x0a) 分割行
+    // 0x0001002C 表示用 ,(0x2c) 分隔列，但用 \x00 分割行, 某些C系统会产生此类格式
+    int32 csv_sep = 1;
+
+    // 忽略前 n 行，一般对于带有 title 行的，应该设置为 1
+    int32 skip_head_n = 2;
+    // 忽略后 n 行
+    int32 skip_tail_n = 3;
+    // 忽略带有给定前缀的行
+    repeated string skip_prefies = 4;
+
+    // 额外的 csv 格式行分割符, 包括 csv_sep 里及该字段的任意字符均会作为分隔符
+    bytes csv_additation_row_sep = 5;
+
+    // 如果 csv 是特别对齐过（每列通过空格补充宽度），可以以此来指出每列的偏移，以优化性能，该列有值表示CSV是对齐的
+    repeated int32 csv_fixed_col_offset = 6;
+    // csv 的字段映射, 默认的情况下，csv 的列与 schema的列 一一对映，可以在此字段中指出 csv 列对映的 schema 列，如果指定了该值，未在 csv_col_mapping 的列将被忽略
+    repeated int32 csv_col_mapping = 7;
+    // 对于某些CSV，可能每行会有不同的字段映射，可以用此字段指出，格式为 {前缀: 逗号分割的数字}
+    map<string, string> csv_col_mapping_by_prefix = 8;
+    // 设置CSV中的 obj 列序号，对于 BulkSchema 和 BulkImport 更新，需要设置此值以指定如何识别 obj 字段，默认为第一列
+    // 例如对于一笔报价数据
+    // - 按 Schema 更新，需要提供 时间，价格，成交量，同时 UdpateDataFrameRequest.obj 设置为 代码
+    // - 按 BulkSchema 更新，需要提供 代码，时间，价格，成交量，并设置 obj_col 为 0
+    int32 obj_col = 9;
+}
+
+// 以Script模式更新时，script的相关属性
+message ScriptOption {
+    // script 的名称
+    string name = 1;
+}
+
+// 待更新数据的配置选项
+message UpdateRowOption {
+    // 数据的格式
+    UpdateRowFormat format = 1;
+    // 如果数据格式是 CSV 格式，可以指定一些 CSV的选项
+    CsvOption csv = 2;
+    // 如果更新模式是 Script，指明 script 的属性
+    ScriptOption script = 3;
+}
+
+// 更新请求的请求参数
+message UpdateDataFrameRequest {
+    // 对象标识, 对于 BulkSchema 和 BulkImport 忽略，而是从 rows 中读取
+    string obj   = 1;
+    // 数据类型
+    string dkind = 2;
+    // 待更新的行，需要根据 dkind 对应的数据的 pkcol 升序排序, 否则更新会出错
+    bytes rows = 3;
+    // 更新方式
+    UpdateMode mode = 4;
+    // 更新行的配置
+    UpdateRowOption rowsOption = 5;
+    // 更新来源 默认无需设置，对于 fowrd 和 chain 可设置来源
+    optional string source = 6;
+}
+
+// 更新请求的返回
+message UpdateDataFrameResponse{
+    // 返回码
+    int32 code    = 1;
+    // 返回码代表的信息
+    string messge = 2;
+    // 更新的行数
+    int32 updated_rows = 3;
+}
+
+// 元数据的更新请求
+message UpdateMetaRequest {
+    // 对于 json 是数组的场景, 指明每一项数据的id键名
+    // 对于 json 是对象的场景, 如果是单条记录, 指明id键名, 如果是多条记录, 设置该值为空
+    // 对于 jsonb 场景，为其键值
+    string idkey = 1;
+    // 元数据存储的表名
+    string table = 2;
+    // 待更新的元数据, JSON 格式
+    // 可以是 数组或对象
+    string json = 3;
+    // 待更新的元数据，JSOB 格式，当JSONB有值时，优先使用JSONB
+    // JSONB总是为单条数据
+    bytes jsonb = 4;
+    // 可选的值键，如果有该值，以该值为键，取 json ，否则当成所有
+    optional string value_key = 5;
+}
+
+// 元数据更新请求的返回
+message UpdateMetaResponse{
+    // 返回码
+    int32 code    = 1;
+    // 返回码代表的信息
+    string messge = 2;
+}
+
+// 过滤器匹配模式
+enum FilterMode  {
+    // 必须全部匹配
+    Full = 0;
+    // 部分匹配即可
+    Part = 1;
+    // 通配符
+    Glob = 2;
+    // 正则表达式
+    Regex = 3;
+}
+
+// 过滤器
+message Filter {
+    string keyword = 1;
+    FilterMode mode = 2;
+    bool ignoreCase = 3;
+}
+
+// 获取表信息请求
+message GetTableRequest {
+    // 表名的匹配过滤器
+    Filter nameFilter = 1;
+}
+
+// 获取表信息响应
+message GetTableResponse {
+    // 返回码
+    int32 code    = 1;
+    // 返回码代表的信息
+    string messge = 2;
+    // 表信息
+    map<string, schema.Schema> schemas = 3;
+}
+
+message ListObjectRequest {
+    // 表名，对应 schema 名
+    string dkind = 1;
+    // 标的名的匹配过滤器
+    Filter objFilter = 2;
+    // 额外的查询, 其中的 __OBJ__ 会被替换成标的，进行查询
+    optional string sql = 3;
+}
+
+message ListObjectResponse {
+    // 返回码
+    int32 code    = 1;
+    // 返回码代表的信息
+    string messge = 2;
+    // 查询到的标的相关的信息
+    map<string, dataframe.DataFrameIndex> objects = 3;
+    // 额外的查询返回的结果集
+    map<string, dataframe.DataFrame> records = 4;
+}
+
+message BinlogRecord {
+    int64 ts = 1;
+    oneof anyRequest  {
+        UpdateMetaRequest Meta = 5;
+        UpdateDataFrameRequest DataFrame = 6;
+    }
+}
+
+enum ForwardOp {
+    StartForward = 0;
+    StopForward = 1;
+    ListForwards = 2;
+}
+
+message ForwardRequest{
+    // 操作类型
+    ForwardOp operation = 1;
+    // 转发目标URL
+    string target = 2;
+    // 启动转发时可以设置的转发开始时间点
+    optional string startDate = 3;
+}
+
+message ForwardDetail {
+    int64 lastTs = 1;
+}
+
+message ForwardResponse {
+    // 返回码
+    int32 code    = 1;
+    // 返回码的代表的消息
+    string messge = 2;
+
+    // 对于 ListForwards, 返回当前的转发详情
+    map<string, ForwardDetail> forwards = 10;
+}
+
+// Sql 查询的请求
+message SqlRequest {
+    // 待执行的SQL
+    string sql = 1;
+    // 可选的 qid，将原样返回
+    optional string qid = 2;
+}
+
+// Sql 查询的回复
+message SqlResponse {
+    // 返回码
+    int32 code    = 1;
+    // 返回码的代表的消息
+    string messge = 2;
+    // 可选的 qid，将原样返回
+    optional string qid = 3;
+    // 相关的行数
+    int32 rows = 4;
+    // 返回的数据
+    dataframe.DataFrame values = 5;
+    // 返回的额外信息
+    map<string, string> addons = 100;
+}
+
+// 数据服务
+service ApiV1 {
+
+    // 获取数据请求
+    rpc Get(GetDataFrameRequest) returns (GetDataFrameResponse) {}
+    // 获取某个表中符合条件的 Object 信息
+    rpc ListObject(ListObjectRequest) returns (ListObjectResponse) {}
+    // 更新数据请求
+    rpc Update(stream UpdateDataFrameRequest) returns (UpdateDataFrameResponse) {}
+    // 获取表信息请求
+    rpc GetTable(GetTableRequest) returns (GetTableResponse) {}
+    // 更新元数据
+    rpc UpdateMeta(UpdateMetaRequest) returns (UpdateMetaResponse) {}
+    // 转发相关的操作
+    rpc Forward(ForwardRequest) returns (ForwardResponse) {}
+    // 执行SQL
+    rpc SqlQuery(SqlRequest) returns (SqlResponse) {}
+}

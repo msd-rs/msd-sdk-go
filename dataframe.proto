@@ -1,0 +1,73 @@
+syntax = "proto3";
+package dataframe;
+
+
+// 字段类型
+enum FieldKind {
+    // 空类型
+    Empty = 0;
+    // Int64 类型, 8字节
+    Int64 = 0x00060000;
+    // DateTime 类型，timestamp, 一般基于local，单位纳秒 1/1e9 秒，是 Int64 的子类型
+    DateTime = 0x00060001;
+    // Decimal 类型， 8字节， 是 Int64 的子类型
+    Decimal64 = 0x00060002;
+    // UInt64 类型， 8字节
+    UInt64 = 0x00060003;
+    // Int8 1字节
+    UInt8 = 0x00080001;
+    // Float64 8字节
+    Float64 = 0x000E0000;
+    // 字符串类型
+    String = 0x00100000;
+}
+
+// Series 是一系列值的数组
+message Series {
+    // 数值的名称
+    string name = 1;
+    // 值的类型
+    FieldKind dtype = 2;
+    // 标量(scalar，单值具有固定的长度)类型，存储于 datas 字段, 如 int64, datetime, float64, uint8 等 
+    bytes  datas = 15;
+    // 字符串类型，存储于 texts 字段中
+    repeated string texts = 16;
+}
+
+
+// DataFrame 是由若干 Series 组成，形成表格形式的数据结果
+message DataFrame {
+    // pk is the sn of primary key of dataframe, default is the first columns, pk column should be sorted
+    int32 pk_col = 1;
+    optional int32 distinct_col = 2;
+    // columns is the dataframe datas
+    repeated Series columns = 15;
+}
+
+// 一个单独的索引块信息
+message DataFrameIndexBlock {
+    // 起始标识值，标识是一行数据的ID，如自增的ID，时间戳等
+    int64 start = 1;
+    // 结尾标识值，标识是一行数据的ID，如自增的ID，时间戳等
+    int64 stop = 2;
+    // 该块中的数据条数
+    uint32 rows = 3;
+}
+
+// DataFrameIndex 是一组 DataFrame 的索引信息
+message DataFrameIndex {
+    // 总行数 SUM(blocks.row) == total_rows
+    uint32 total_rows = 1;
+    // 每组的最大行数，从 schema 获取
+    uint32 max_rows_per_block = 2;
+    // 在内存中缓存的最大行数，从 schema 获取
+    uint32 max_rows_in_memory = 5;
+    // 所有数据的起始标识值，标识是一行数据的ID，如自增的ID，时间戳等
+    // start = blocks.first.start
+    int64 start = 3;
+    // 所有数据的结尾标识值，标识是一行数据的ID，如自增的ID，时间戳等
+    // stop = blocks.last.stop
+    int64 stop = 4;
+    // 索引块列表
+    repeated DataFrameIndexBlock blocks = 10;
+}
