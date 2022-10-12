@@ -28,6 +28,8 @@ type ApiV1Client interface {
 	ListObject(ctx context.Context, in *ListObjectRequest, opts ...grpc.CallOption) (*ListObjectResponse, error)
 	// 更新数据请求
 	Update(ctx context.Context, opts ...grpc.CallOption) (ApiV1_UpdateClient, error)
+	// 单次更新数据请求，在某些场景，stream 更新可能无法使用，如 grpcweb
+	UpdateOnce(ctx context.Context, in *UpdateDataFrameRequest, opts ...grpc.CallOption) (*UpdateDataFrameResponse, error)
 	// 获取表信息请求
 	GetTable(ctx context.Context, in *GetTableRequest, opts ...grpc.CallOption) (*GetTableResponse, error)
 	// 更新元数据
@@ -98,6 +100,15 @@ func (x *apiV1UpdateClient) CloseAndRecv() (*UpdateDataFrameResponse, error) {
 	return m, nil
 }
 
+func (c *apiV1Client) UpdateOnce(ctx context.Context, in *UpdateDataFrameRequest, opts ...grpc.CallOption) (*UpdateDataFrameResponse, error) {
+	out := new(UpdateDataFrameResponse)
+	err := c.cc.Invoke(ctx, "/msd.ApiV1/UpdateOnce", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *apiV1Client) GetTable(ctx context.Context, in *GetTableRequest, opts ...grpc.CallOption) (*GetTableResponse, error) {
 	out := new(GetTableResponse)
 	err := c.cc.Invoke(ctx, "/msd.ApiV1/GetTable", in, out, opts...)
@@ -144,6 +155,8 @@ type ApiV1Server interface {
 	ListObject(context.Context, *ListObjectRequest) (*ListObjectResponse, error)
 	// 更新数据请求
 	Update(ApiV1_UpdateServer) error
+	// 单次更新数据请求，在某些场景，stream 更新可能无法使用，如 grpcweb
+	UpdateOnce(context.Context, *UpdateDataFrameRequest) (*UpdateDataFrameResponse, error)
 	// 获取表信息请求
 	GetTable(context.Context, *GetTableRequest) (*GetTableResponse, error)
 	// 更新元数据
@@ -167,6 +180,9 @@ func (UnimplementedApiV1Server) ListObject(context.Context, *ListObjectRequest) 
 }
 func (UnimplementedApiV1Server) Update(ApiV1_UpdateServer) error {
 	return status.Errorf(codes.Unimplemented, "method Update not implemented")
+}
+func (UnimplementedApiV1Server) UpdateOnce(context.Context, *UpdateDataFrameRequest) (*UpdateDataFrameResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateOnce not implemented")
 }
 func (UnimplementedApiV1Server) GetTable(context.Context, *GetTableRequest) (*GetTableResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTable not implemented")
@@ -255,6 +271,24 @@ func (x *apiV1UpdateServer) Recv() (*UpdateDataFrameRequest, error) {
 	return m, nil
 }
 
+func _ApiV1_UpdateOnce_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateDataFrameRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ApiV1Server).UpdateOnce(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/msd.ApiV1/UpdateOnce",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ApiV1Server).UpdateOnce(ctx, req.(*UpdateDataFrameRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ApiV1_GetTable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetTableRequest)
 	if err := dec(in); err != nil {
@@ -341,6 +375,10 @@ var ApiV1_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListObject",
 			Handler:    _ApiV1_ListObject_Handler,
+		},
+		{
+			MethodName: "UpdateOnce",
+			Handler:    _ApiV1_UpdateOnce_Handler,
 		},
 		{
 			MethodName: "GetTable",

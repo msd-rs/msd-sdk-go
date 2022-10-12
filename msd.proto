@@ -328,6 +328,8 @@ service ApiV1 {
     rpc ListObject(ListObjectRequest) returns (ListObjectResponse) {}
     // 更新数据请求
     rpc Update(stream UpdateDataFrameRequest) returns (UpdateDataFrameResponse) {}
+    // 单次更新数据请求，在某些场景，stream 更新可能无法使用，如 grpcweb
+    rpc UpdateOnce(UpdateDataFrameRequest) returns (UpdateDataFrameResponse) {}
     // 获取表信息请求
     rpc GetTable(GetTableRequest) returns (GetTableResponse) {}
     // 更新元数据
