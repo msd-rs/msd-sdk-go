@@ -165,6 +165,8 @@ message UpdateDataFrameRequest {
     UpdateRowOption rowsOption = 5;
     // 更新来源 默认无需设置，对于 fowrd 和 chain 可设置来源
     optional string source = 6;
+    // 数据应该立刻更新，避免缓存，no_cache 牺牲一定的及时性，提升吞吐
+    bool no_cache = 7;
 }
 
 // 更新请求的返回
